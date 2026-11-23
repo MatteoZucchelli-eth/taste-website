@@ -76,7 +76,7 @@
       <input id="r-name" class="name" type="text" maxlength="24" placeholder="Your name (shown to friends)" autocomplete="given-name">
       <button id="share" class="btn">Share my result</button>
       <button id="restart" class="btn ghost">Play again</button>
-      <p class="hint">Artworks from the LAPIS dataset (Maerten et al. 2025, CC BY-NC 4.0). Your picks are saved anonymously for research: no name, no IP address, no device info.</p>
+      <p class="hint">Artworks from the LAPIS dataset (Maerten et al. 2025, CC BY-NC 4.0). Your picks are saved anonymously for research: no name, no IP address, no device info. Visits are counted with cookieless Vercel Web Analytics.</p>
     </div>
   </section>
 
@@ -90,6 +90,8 @@
     </div>
   </div>
 </main>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
+<script defer src="/_vercel/insights/script.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

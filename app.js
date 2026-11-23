@@ -24,6 +24,8 @@ const CFG = window.TASTE_CONFIG;
 const isRandomQ = (n) => n < CFG.nRandom || (CFG.mixRandom && (n - CFG.nRandom) % 2 === 1);
 const $ = (id) => document.getElementById(id);
 /** Image URL: the local server mirrors the dataset paths; the Vercel build renames images to <index>.jpg. */
+/** Anonymous funnel event for Vercel Web Analytics (no-op locally; custom events show up on Vercel Pro and above). */
+const track = (name, data) => { try { window.va && window.va("event", { name, data }); } catch {} };
 const imgUrl = (i) => CFG.imgBase + (CFG.imgByIndex ? `${i}.jpg` : M.path[i]);
 
 // Pole names, read off the top/bottom images of each axis (fold-0 shared model; see outputs/phase_c/axes.html).
@@ -341,6 +343,7 @@ function showResults() {
   const hits = S.tests.filter((t) => t.choice === t.pred).length;
   const crowd = S.tests.filter((t) => t.choice === t.cons).length;
   S.hits = hits;
+  track("Finished", { score: hits, crowd, challenge: !!S.challenge });
   $("r-score").textContent = hits;
   $("r-sub").textContent = `It learned your taste from ${CFG.nTrain} picks, then guessed ${hits} of your next ${CFG.nTest} before you chose.`;
   $("r-crowd").textContent = `A model of average taste would have guessed ${crowd}/${CFG.nTest}.`;
@@ -523,12 +526,13 @@ async function boot() {
 }
 
 slots.forEach((s, k) => s.addEventListener("click", () => onPick(k)));
-$("start").addEventListener("click", () => { showScreen("play"); trainStep(); });
-$("go-test").addEventListener("click", () => { showScreen("play"); testStep(); });
+$("start").addEventListener("click", () => { track("Start", { challenge: !!S.challenge }); showScreen("play"); trainStep(); });
+$("go-test").addEventListener("click", () => { track("Test start"); showScreen("play"); testStep(); });
 $("next").addEventListener("click", () => { if (S.tests.length >= CFG.nTest) showResults(); else testStep(); });
-$("share").addEventListener("click", share);
+$("share").addEventListener("click", () => { track("Share"); share(); });
 $("sheet-close").addEventListener("click", () => { $("sheet").hidden = true; });
 $("restart").addEventListener("click", () => {
+  track("Play again");
   newSession();
   const first = place(randomPair());
   S.ahead = { any: first };
