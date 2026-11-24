@@ -366,7 +366,7 @@ function showResults() {
     const who = S.challenge.n || "your friend";
     $("r-match").innerHTML = `You and <span></span>: <b>${m}%</b> taste match<br><span class="hint"></span>`;
     $("r-match").querySelector("span").textContent = who;
-    $("r-match").querySelector(".hint").textContent = `Their model guessed ${S.challenge.s}/10, yours ${hits}/10.`;
+    $("r-match").querySelector(".hint").textContent = `Their model guessed ${S.challenge.s}/${S.challenge.t}, yours ${hits}/${CFG.nTest}.`;
     $("r-match").hidden = false;
   }
   try { $("r-name").value = localStorage.getItem("taste_name") || ""; } catch {}
@@ -380,7 +380,7 @@ function b64url(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,
 function unb64url(s) { return decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/")))); }
 function shareLink(name) {
   const z = S.z.map((v, k) => Math.round((1000 * (v - M.mu[k])) / Math.sqrt(M.Sig[k][k])));
-  const payload = b64url(JSON.stringify({ n: name, s: S.hits, z }));
+  const payload = b64url(JSON.stringify({ n: name, s: S.hits, t: CFG.nTest, z }));
   return `${location.origin}${location.pathname}#c=${payload}`;
 }
 function readChallenge() {
@@ -389,7 +389,8 @@ function readChallenge() {
   try {
     const o = JSON.parse(unb64url(m[1]));
     if (!Array.isArray(o.z) || o.z.length !== K) return null;
-    return { n: String(o.n || "").slice(0, 24), s: Math.max(0, Math.min(10, o.s | 0)),
+    const t = Math.max(1, Math.min(100, o.t | 0 || 10)); // older links have no t: they were out of 10
+    return { n: String(o.n || "").slice(0, 24), t, s: Math.max(0, Math.min(t, o.s | 0)),
              z: o.z.map((v, k) => M.mu[k] + (v / 1000) * Math.sqrt(M.Sig[k][k])) };
   } catch { return null; }
 }
@@ -514,9 +515,11 @@ async function boot() {
   ]);
   M = meta; U = new Float32Array(buf); K = M.k; N = M.n;
   Object.assign(PRIOR, priorBlocks());
+  document.querySelectorAll(".n-train").forEach((e) => { e.textContent = CFG.nTrain; });
+  document.querySelectorAll(".n-test").forEach((e) => { e.textContent = CFG.nTest; });
   newSession();
   if (S.challenge) {
-    $("challenge").textContent = `${S.challenge.n || "A friend"}'s taste model guessed ${S.challenge.s}/10. Can it read you?`;
+    $("challenge").textContent = `${S.challenge.n || "A friend"}'s taste model guessed ${S.challenge.s}/${S.challenge.t}. Can it read you?`;
     $("challenge").hidden = false;
   }
   const first = place(randomPair());

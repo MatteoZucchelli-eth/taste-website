@@ -7,9 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#161616">
 <title>This or That</title>
-<meta name="description" content="Pick between 25 pairs of artworks. Then an AI tries to guess your next 10 picks before you make them.">
+<meta name="description" content="Pick between 50 pairs of artworks. Then an AI tries to guess your next 20 picks before you make them.">
 <meta property="og:title" content="Can an AI read your taste in art?">
-<meta property="og:description" content="25 picks to learn you. 10 picks to prove it.">
+<meta property="og:description" content="50 picks to learn you. 20 picks to prove it.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -20,8 +20,8 @@
     <h1>This or That</h1>
     <p class="lead">Tap the artwork you prefer.</p>
     <ol class="steps">
-      <li><b>25</b> picks to learn your taste</li>
-      <li><b>10</b> picks where the model guesses first</li>
+      <li><b class="n-train">50</b> picks to learn your taste</li>
+      <li><b class="n-test">20</b> picks where the model guesses first</li>
     </ol>
     <p class="hint">Go with your gut. There are no right answers.</p>
     <button id="start" class="btn" disabled>Loading…</button>
@@ -51,16 +51,16 @@
   <!-- between phases -->
   <section id="ready" class="screen center" hidden>
     <h1>Model ready</h1>
-    <p class="lead">It has learned your taste from 25 picks.</p>
+    <p class="lead">It has learned your taste from <span class="n-train">50</span> picks.</p>
     <p class="hint">Now it guesses each pick <b>before</b> you make it, then shows you its guess.</p>
-    <button id="go-test" class="btn">Test it · 10 picks</button>
+    <button id="go-test" class="btn">Test it · <span class="n-test">20</span> picks</button>
   </section>
 
   <!-- results -->
   <section id="results" class="screen scroll" hidden>
     <div class="res-head">
       <p class="eyebrow">The model predicted</p>
-      <p class="big"><span id="r-score">0</span><span class="of">/10</span></p>
+      <p class="big"><span id="r-score">0</span><span class="of">/<span class="n-test">20</span></span></p>
       <p id="r-sub" class="lead"></p>
       <p id="r-crowd" class="hint"></p>
       <p id="r-saved" class="hint"></p>

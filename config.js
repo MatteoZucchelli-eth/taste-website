@@ -2,9 +2,9 @@
 window.TASTE_CONFIG = {
   imgBase: "/img/",
   imgByIndex: true, // images are served as img/<index>.jpg
-  nTrain: 25,
+  nTrain: 50,
   nRandom: 5,
-  nTest: 10,
+  nTest: 20,
   nCand: 3000,
   sideBiasSd: 0.5,
   minViewMs: 450,
