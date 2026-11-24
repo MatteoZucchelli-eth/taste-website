@@ -84,29 +84,53 @@ function priorBlocks() {
 }
 const PRIOR = { m: null, P: null };
 
-/** MAP of theta = [z, b] given answers [{top, bottom, y}] (y = 1 if top chosen). Returns {z, b, H}. */
+/** Negative log posterior of theta (up to a constant): logistic loss + Gaussian prior. */
+function objective(th, X, answers) {
+  const n = K + 1, { m, P } = PRIOR;
+  let v = 0;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) v += 0.5 * (th[i] - m[i]) * P[i][j] * (th[j] - m[j]);
+  answers.forEach((a, r) => {
+    let l = 0; for (let i = 0; i < n; i++) l += X[r][i] * th[i];
+    v += Math.log1p(Math.exp(-Math.abs(l))) + Math.max(l, 0) - a.y * l; // log(1 + e^l) - y l, overflow-safe
+  });
+  return v;
+}
+
+/** MAP of theta = [z, b] given answers [{top, bottom, y}] (y = 1 if top chosen). Returns {z, b, H}.
+ * Newton with backtracking: a full Newton step can overshoot on logistic losses and never recover
+ * (seen in real sessions: objective stuck at 687 vs a true minimum of 12.8), so a step is halved until it lowers the objective. */
 function fit(answers) {
   const n = K + 1, { m, P } = PRIOR;
-  const th = m.slice();
-  let H;
-  for (let it = 0; it < 40; it++) {
+  const X = answers.map((a) => [...diff(a.top, a.bottom), 1]);
+  let th = m.slice();
+  let H, f0 = objective(th, X, answers);
+  for (let it = 0; it < 100; it++) {
     const g = new Array(n).fill(0);
     H = P.map((r) => r.slice());
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) g[i] += P[i][j] * (th[j] - m[j]);
-    for (const a of answers) {
-      const x = [...diff(a.top, a.bottom), 1];
+    answers.forEach((a, r) => {
+      const x = X[r];
       let l = 0; for (let i = 0; i < n; i++) l += x[i] * th[i];
       const p = sigmoid(l), w = p * (1 - p);
       for (let i = 0; i < n; i++) {
         g[i] += (p - a.y) * x[i];
         for (let j = 0; j < n; j++) H[i][j] += w * x[i] * x[j];
       }
-    }
+    });
     const step = solve(H, g);
+    let t = 1, next, f1;
+    for (; t > 1e-8; t /= 2) {
+      next = th.map((v, i) => v - t * step[i]);
+      f1 = objective(next, X, answers);
+      if (f1 <= f0) break;
+    }
+    if (!(f1 <= f0)) break; // no descent possible: already at the minimum (numerically)
     let mx = 0;
-    for (let i = 0; i < n; i++) { th[i] -= step[i]; mx = Math.max(mx, Math.abs(step[i])); }
+    for (let i = 0; i < n; i++) mx = Math.max(mx, Math.abs(t * step[i]));
+    th = next; f0 = f1;
     if (mx < 1e-9) break;
   }
+  // H above is the Hessian at the point before the last (tiny) step; fine for the Laplace posterior.
   return { z: th.slice(0, K), b: th[K], H };
 }
 
