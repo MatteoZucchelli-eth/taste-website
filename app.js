@@ -384,7 +384,13 @@ function showResults() {
     box.append(d);
   }
   S.picks = topBy((i) => S.sUser[i], 6, (i) => !S.used.has(i));
-  $("r-picks").replaceChildren(...S.picks.map(img));
+  $("r-picks").replaceChildren(...S.picks.map((i) => {
+    const b = document.createElement("button");
+    b.className = "pick"; b.setAttribute("aria-label", "Open this artwork");
+    b.append(img(i));
+    b.addEventListener("click", () => openArt(i));
+    return b;
+  }));
   if (S.challenge) {
     const m = tasteMatch(S.z, S.challenge.z);
     const who = S.challenge.n || "your friend";
@@ -397,6 +403,46 @@ function showResults() {
   showScreen("results");
   $("results").scrollTop = 0;
   saveSession();
+}
+
+// ------------------------------------------------------------------ artwork viewer (suggested picks)
+/** Artist, title and year from the LAPIS (WikiArt-style) filename, e.g. "abstract/aaron-siskind_new-york-2-1948.jpg". */
+function credit(i) {
+  const stem = M.path[i].split("/").pop().replace(/\.[a-z]+$/i, "");
+  const [a, ...rest] = stem.split("_");
+  const cap = (t) => t.split("-").filter(Boolean).map((w) => w.replace(/(^|\.)([a-z])/g, (_, p, ch) => p + ch.toUpperCase())).join(" ");
+  let t = rest.join("_");
+  const m = t.match(/-(\d{4})$/);
+  const year = m ? m[1] : "";
+  if (m) t = t.slice(0, -5);
+  return { artist: cap(a), title: cap(t) || "Untitled", year, file: `${stem}.jpg` };
+}
+function openArt(i) {
+  const c = credit(i);
+  S.viewing = i;
+  $("art-img").src = imgUrl(i);
+  $("art-title").textContent = c.year ? `${c.title}, ${c.year}` : c.title;
+  $("art-artist").textContent = c.artist;
+  $("art-open").href = imgUrl(i);
+  $("art").hidden = false;
+  track("Open artwork");
+}
+async function saveArt() {
+  const i = S.viewing, c = credit(i);
+  track("Download artwork");
+  try {
+    const blob = await fetch(imgUrl(i)).then((r) => { if (!r.ok) throw new Error(r.status); return r.blob(); });
+    const file = new File([blob], c.file, { type: blob.type || "image/jpeg" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { // iPhone: share sheet with "Save Image"
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = c.file;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  } catch {
+    window.open(imgUrl(i), "_blank"); // last resort: open it; long-press to save
+  }
 }
 
 // ------------------------------------------------------------------ share
@@ -558,6 +604,9 @@ $("go-test").addEventListener("click", () => { track("Test start"); showScreen("
 $("next").addEventListener("click", () => { if (S.tests.length >= CFG.nTest) showResults(); else testStep(); });
 $("share").addEventListener("click", () => { track("Share"); share(); });
 $("sheet-close").addEventListener("click", () => { $("sheet").hidden = true; });
+$("art-save").addEventListener("click", saveArt);
+$("art-close").addEventListener("click", () => { $("art").hidden = true; });
+$("art").addEventListener("click", (e) => { if (e.target === $("art")) $("art").hidden = true; });
 $("restart").addEventListener("click", () => {
   track("Play again");
   newSession();

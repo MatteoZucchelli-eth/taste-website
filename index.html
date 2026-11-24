@@ -81,7 +81,7 @@
     <p id="r-label" class="label"></p>
     <div id="r-axes" class="axes"></div>
     <h2>Picked for you</h2>
-    <p class="hint">Artworks you haven't seen that the model thinks you'd like most.</p>
+    <p class="hint">Artworks you haven't seen that the model thinks you'd like most. Tap one to open or save it.</p>
     <div id="r-picks" class="grid"></div>
     <div class="share-box">
       <input id="r-name" class="name" type="text" maxlength="24" placeholder="Your name (shown to friends)" autocomplete="given-name">
@@ -90,6 +90,18 @@
       <p class="hint">Artworks from the LAPIS dataset (Maerten et al. 2025, CC BY-NC 4.0). Your picks are saved anonymously for research: no name, no IP address, no device info. Visits are counted with cookieless Vercel Web Analytics.</p>
     </div>
   </section>
+
+  <!-- artwork viewer for the suggested picks -->
+  <div id="art" class="sheet" hidden>
+    <div class="sheet-inner">
+      <img id="art-img" alt="Suggested artwork">
+      <div class="art-credit"><b id="art-title"></b><span id="art-artist"></span></div>
+      <button id="art-save" class="btn">Save image</button>
+      <a id="art-open" class="btn ghost" target="_blank" rel="noopener">Open full size</a>
+      <p class="hint">From the LAPIS dataset (CC BY-NC 4.0): personal, non-commercial use. The artwork may be under the artist's copyright.</p>
+      <button id="art-close" class="btn small">Close</button>
+    </div>
+  </div>
 
   <!-- share fallback (no Web Share API, e.g. plain http on the LAN) -->
   <div id="sheet" class="sheet" hidden>

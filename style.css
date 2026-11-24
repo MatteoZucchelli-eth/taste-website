@@ -44,7 +44,7 @@ h2 { font-size: 1.05rem; margin: 22px 0 0; }
 
 .btn {
   appearance: none; border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent);
-  font: 600 1rem/1 inherit; font-family: inherit; padding: 15px 28px; min-height: 48px; cursor: pointer;
+  font-family: inherit; font-weight: 600; font-size: 1rem; line-height: 1; padding: 15px 28px; min-height: 48px; cursor: pointer;
 }
 .btn:disabled { opacity: .45; }
 .btn.small { padding: 11px 22px; min-height: 42px; }
@@ -96,6 +96,11 @@ h2 { font-size: 1.05rem; margin: 22px 0 0; }
 .axis-name span:last-child { color: var(--muted); white-space: nowrap; }
 .strip, .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .grid { grid-template-columns: repeat(3, 1fr); }
+.pick { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 6px; }
+.pick:active img { opacity: .8; }
+a.btn { text-decoration: none; display: block; text-align: center; }
+.art-credit { display: grid; gap: 2px; }
+.art-credit span { color: var(--muted); font-size: .92rem; }
 .strip img, .grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: var(--slot); display: block; }
 .share-box { display: grid; gap: 10px; padding: 22px 0 28px; }
 .name {
