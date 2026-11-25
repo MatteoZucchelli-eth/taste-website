@@ -402,14 +402,37 @@ function pctBelow(sorted, x) {
 }
 /** How much more of trait t this person has than other people (percent), in the trait's own direction. */
 const traitPct = (t) => (t.dev > 0 ? pctBelow(REF.axes[t.k], t.dev) : 100 - pctBelow(REF.axes[t.k], t.dev));
-/** One line comparing the whole taste with other people, framed by which side of the median it falls. */
-const uniqLine = (p) => (p >= 50 ? `more unusual than ${p}% of people` : `more mainstream than ${100 - p}% of people`);
-/** How unusual the whole taste is: share of people with a taste closer to the average (Mahalanobis distance of z). */
-function uniqPct(z) {
-  let d2 = 0;
-  for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) d2 += (z[i] - M.mu[i]) * M.Sinv[i][j] * (z[j] - M.mu[j]);
-  return pctBelow(REF.uniq, Math.sqrt(d2));
+/** Upper normal tail P(N(0,1) > x) (Abramowitz-Stegun 7.1.26 erfc, error < 2e-7). */
+function normQ(x) {
+  const t = 1 / (1 + (0.3275911 * Math.abs(x)) / Math.SQRT2);
+  const e = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x / 2);
+  return x >= 0 ? e / 2 : 1 - e / 2;
 }
+/** How rare the person's mix is: the share of people at least as strong as them on BOTH top traits (each in its own
+ *  direction), from a Gaussian fitted to the reference crowd (REF.mix, src/app_reference.py). Returns N in "1 in N".
+ *  Measured on the reference crowd it ranges from about 1 in 11 to far beyond 1 in 1,000, so nobody comes out "average". */
+function mixRarity(T) {
+  const [a, b] = T, sa = Math.sign(a.dev) || 1, sb = Math.sign(b.dev) || 1, { mean, cov } = REF.mix;
+  const ma = sa * mean[a.k], mb = sb * mean[b.k], va = cov[a.k][a.k], vb = cov[b.k][b.k];
+  const rho = (sa * sb * cov[a.k][b.k]) / Math.sqrt(va * vb), r = Math.sqrt(1 - rho * rho);
+  const xa = (Math.abs(a.dev) - ma) / Math.sqrt(va), xb = (Math.abs(b.dev) - mb) / Math.sqrt(vb);
+  // P(X > xa, Y > xb) = integral over x > xa of phi(x) * Q((xb - rho x) / r), Simpson's rule up to xa + 8
+  const n = 400, h = 8 / n;
+  let p = 0;
+  for (let i = 0; i <= n; i++) {
+    const x = xa + i * h, w = i === 0 || i === n ? 1 : i % 2 ? 4 : 2;
+    p += w * Math.exp(-x * x / 2) * normQ((xb - rho * x) / r);
+  }
+  p *= h / 3 / Math.sqrt(2 * Math.PI);
+  return 1 / Math.max(p, 1e-6);
+}
+/** "1 in N" with a readable N: exact below 20, then rounded; capped at 1,000 (beyond that the reference crowd says little). */
+function rarityText(N) {
+  if (N >= 1000) return "fewer than 1 in 1,000";
+  const r = N < 20 ? Math.round(N) : N < 100 ? 5 * Math.round(N / 5) : 10 * Math.round(N / 10);
+  return `only 1 in ${r.toLocaleString("en-US")}`;
+}
+const mixLine = (T, N) => `${rarityText(N)} people share your mix of ${T[0].name.toLowerCase()} and ${T[1].name.toLowerCase()}`;
 function img(i) { const im = document.createElement("img"); im.src = imgUrl(i); im.alt = ""; im.loading = "lazy"; return im; }
 
 function showResults() {
@@ -422,8 +445,9 @@ function showResults() {
   const T = traits(S.z);
   S.traits = T;
   $("r-label").textContent = `${T[0].name} × ${T[1].name}`;
-  S.uniq = uniqPct(S.z);
-  $("r-unique").textContent = `Your taste is ${uniqLine(S.uniq)}.`;
+  S.rarity = mixRarity(T);
+  const line = mixLine(T, S.rarity);
+  $("r-unique").textContent = `${line[0].toUpperCase()}${line.slice(1)}.`;
   const box = $("r-axes"); box.replaceChildren();
   for (const t of T.slice(0, 3)) {
     const d = document.createElement("div"); d.className = "axis";
@@ -552,7 +576,7 @@ async function makeCard() {
   g.fillStyle = "#ededeb"; g.font = `700 54px ${font}`;
   y = wrap(g, `${S.traits[0].name} × ${S.traits[1].name}`, 80, y + 108, W - 160, 64);
   g.fillStyle = "#9a9a96"; g.font = `500 36px ${font}`;
-  const u = uniqLine(S.uniq);
+  const u = rarityText(S.rarity).replace(/^only 1/, "1") + " people share this mix";
   y = wrap(g, u[0].toUpperCase() + u.slice(1), 80, y + 4, W - 160, 46);
   // three artworks the model picked for me
   const picks = topBy((i) => S.sUser[i], 3, (i) => !S.used.has(i));
@@ -580,7 +604,7 @@ async function share() {
   btn.disabled = false; btn.textContent = "Share my result";
   const file = new File([blob], "my-taste.png", { type: "image/png" });
   const text = `An AI learned my taste in art from ${CFG.nTrain} picks and guessed ${S.hits}/${CFG.nTest} of my next ones. ` +
-    `My taste: ${S.traits[0].name} × ${S.traits[1].name}, ${uniqLine(S.uniq)}. Can it read you?`;
+    `My taste: ${S.traits[0].name} × ${S.traits[1].name}, a mix ${rarityText(S.rarity).replace(/^only /, "")} people share. Can it read you?`;
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], text: `${text} ${link}` }); return; } catch (e) { if (e.name === "AbortError") return; }
   }
