@@ -5,6 +5,8 @@ window.TASTE_CONFIG = {
   nTrain: 50,
   nRandom: 5,
   nTest: 20,
+  nSure: 5,       // test pairs the model is most sure about; URL ?sure=N
+  nContra: 5,     // test pairs the model is most sure about AND the crowd model would get wrong; URL ?contra=N (rest random)
   nCand: 3000,
   sideBiasSd: 0.5,
   minViewMs: 450,

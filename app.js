@@ -5,8 +5,9 @@
  *   P(top chosen) = sigmoid(s(top) - s(bottom) + b)   b = per-person side bias (top/bottom or left/right)
  *   prior z ~ N(mu, Sigma / tau), b ~ N(0, sideBiasSd^2); MAP by Newton; Laplace posterior for question selection.
  * Questions 1..nRandom are random pairs, the rest maximise expected information about z
- * (p(1-p) d^T H_z^-1 d, as in src/active.py). Test pairs are random; the frozen model's guess is locked before the pair
- * is shown. Positions are randomised on every pair, and b soaks up any side preference so it does not leak into z.
+ * (p(1-p) d^T H_z^-1 d, as in src/active.py). Test pairs (at random positions): nSure are the pair the model is most sure
+ * about among nCand random candidates, nContra the most-sure pair on which the crowd model (z = mu) picks the other image, the rest
+ * random (simulated in src/sure_test.py); the frozen model's guess is locked before the pair is shown. Positions are randomised on every pair, and b soaks up any side preference so it does not leak into z.
  */
 const CFG = window.TASTE_CONFIG;
 // URL overrides for long data-collection sessions, e.g. ?train=100&test=20&mix=1
@@ -17,6 +18,8 @@ const CFG = window.TASTE_CONFIG;
   const int = (k, lo, hi) => { const v = parseInt(q.get(k), 10); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null; };
   CFG.nTrain = int("train", 5, 400) ?? CFG.nTrain;
   CFG.nTest = int("test", 1, 100) ?? CFG.nTest;
+  CFG.nSure = Math.min(CFG.nTest, int("sure", 0, 100) ?? CFG.nSure ?? 0);
+  CFG.nContra = Math.min(CFG.nTest - CFG.nSure, int("contra", 0, 100) ?? CFG.nContra ?? 0);
   CFG.mixRandom = q.get("mix") === "1";
   CFG.tag = (q.get("tag") || "").replace(/[^\w-]/g, "").slice(0, 40);
 }
@@ -41,7 +44,7 @@ const AXES = [
   { hi: "Lush florals", lo: "Stark black & white" },
 ];
 
-let M, U, K, N;
+let M, U, K, N, REF; // REF = reference crowd for "you vs other people" (data/ref.json, src/app_reference.py)
 let S; // session state
 
 // ------------------------------------------------------------------ small linear algebra (n <= 10)
@@ -164,6 +167,32 @@ function infoPair(answers, exclude) {
   }
   return best;
 }
+/** Test pair the model is most sure about: largest |s(a) - s(b)| under the person's z among nCand random unused pairs. */
+function surePair() {
+  let best = null, bestSc = -1;
+  for (let c = 0; c < CFG.nCand; c++) {
+    const [a, b] = randomPair();
+    const sc = Math.abs(S.sUser[a] - S.sUser[b]);
+    if (sc > bestSc) { bestSc = sc; best = [a, b]; }
+  }
+  return best;
+}
+/** Contrarian test pair: the personal model is most sure AND the crowd model picks the other image (falls back to surePair). */
+function contraPair() {
+  let best = null, bestSc = -1;
+  for (let c = 0; c < CFG.nCand; c++) {
+    const [a, b] = randomPair();
+    const d = S.sUser[a] - S.sUser[b];
+    if (d * (S.sCrowd[a] - S.sCrowd[b]) >= 0) continue;
+    if (Math.abs(d) > bestSc) { bestSc = Math.abs(d); best = [a, b]; }
+  }
+  return best || surePair();
+}
+/** Fisher–Yates shuffle in place (sort with a random comparator is biased). */
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 /** Randomise which image goes in slot 0 (top / left). */
 function place([a, b]) { return Math.random() < 0.5 ? { top: a, bottom: b } : { top: b, bottom: a }; }
 
@@ -279,20 +308,24 @@ function onPick(k) {
 function finishTraining() {
   const f = fit(S.answers);
   S.z = f.z; S.b = f.b;
-  S.sUser = new Float64Array(N);
-  for (let i = 0; i < N; i++) S.sUser[i] = score(S.z, i);
+  S.sUser = new Float64Array(N); S.sCrowd = new Float64Array(N);
+  for (let i = 0; i < N; i++) { S.sUser[i] = score(S.z, i); S.sCrowd[i] = score(M.mu, i); }
   S.phase = "test";
   S.tests = [];
+  // which test positions get a "sure" / "contra" pair (random positions, so they are not all at the start or end)
+  const order = shuffle([...Array(CFG.nTest).keys()]);
+  S.kindAt = new Map(order.slice(0, CFG.nSure + CFG.nContra).map((p, j) => [p, j < CFG.nSure ? "sure" : "contra"]));
   S.nextTest = makeTest();
   showScreen("ready");
 }
 function makeTest() {
-  const pr = place(randomPair());
+  const kind = S.kindAt.get(S.tests.length) || "random"; // index of the test this pair will become
+  const pr = place(kind === "sure" ? surePair() : kind === "contra" ? contraPair() : randomPair());
   const st = score(S.z, pr.top), sb = score(S.z, pr.bottom);
   const ct = score(M.mu, pr.top), cb = score(M.mu, pr.bottom);
   preload(pr.top); preload(pr.bottom);
   // the guess is fixed here, before the pair is on screen
-  return { ...pr, pred: st >= sb ? 0 : 1, conf: sigmoid(Math.abs(st - sb)), cons: ct >= cb ? 0 : 1 };
+  return { ...pr, kind, pred: st >= sb ? 0 : 1, conf: sigmoid(Math.abs(st - sb)), cons: ct >= cb ? 0 : 1 };
 }
 async function testStep() {
   const t = S.nextTest;
@@ -311,7 +344,7 @@ function revealTest(k, dt) {
     const tag = slots[j].querySelector(".tag");
     const parts = [];
     if (j === k) parts.push("Your pick");
-    if (j === t.pred) parts.push(`Model's guess · ${Math.round(100 * t.conf)}% sure`);
+    if (j === t.pred) parts.push("Model's guess");
     if (parts.length) { tag.textContent = parts.join(" · "); tag.className = "tag on" + (j === t.pred ? " model" : ""); }
   });
   const hit = k === t.pred;
@@ -361,6 +394,22 @@ function tasteMatch(z1, z2) { // correlation of the personal part of the scores 
   const r = (sxy - (sx * sy) / n) / Math.sqrt((sxx - (sx * sx) / n) * (syy - (sy * sy) / n));
   return Math.round(50 * (1 + r));
 }
+/** Share of the reference crowd (data/ref.json: LAPIS raters fitted from 50 app-style picks) below x, in 0..100. */
+function pctBelow(sorted, x) {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < x) lo = m + 1; else hi = m; }
+  return Math.round((100 * lo) / sorted.length);
+}
+/** How much more of trait t this person has than other people (percent), in the trait's own direction. */
+const traitPct = (t) => (t.dev > 0 ? pctBelow(REF.axes[t.k], t.dev) : 100 - pctBelow(REF.axes[t.k], t.dev));
+/** One line comparing the whole taste with other people, framed by which side of the median it falls. */
+const uniqLine = (p) => (p >= 50 ? `more unusual than ${p}% of people` : `more mainstream than ${100 - p}% of people`);
+/** How unusual the whole taste is: share of people with a taste closer to the average (Mahalanobis distance of z). */
+function uniqPct(z) {
+  let d2 = 0;
+  for (let i = 0; i < K; i++) for (let j = 0; j < K; j++) d2 += (z[i] - M.mu[i]) * M.Sinv[i][j] * (z[j] - M.mu[j]);
+  return pctBelow(REF.uniq, Math.sqrt(d2));
+}
 function img(i) { const im = document.createElement("img"); im.src = imgUrl(i); im.alt = ""; im.loading = "lazy"; return im; }
 
 function showResults() {
@@ -374,12 +423,15 @@ function showResults() {
   const T = traits(S.z);
   S.traits = T;
   $("r-label").textContent = `${T[0].name} × ${T[1].name}`;
+  S.uniq = uniqPct(S.z);
+  $("r-unique").textContent = `Your taste is ${uniqLine(S.uniq)}.`;
   const box = $("r-axes"); box.replaceChildren();
   for (const t of T.slice(0, 3)) {
     const d = document.createElement("div"); d.className = "axis";
     d.innerHTML = `<div class="axis-name"><span></span><span></span></div><div class="strip"></div>`;
     d.querySelector(".axis-name span").textContent = t.name;
-    d.querySelector(".axis-name span:last-child").textContent = `over ${t.vs.toLowerCase()}`;
+    const pct = traitPct(t);
+    d.querySelector(".axis-name span:last-child").textContent = pct >= 50 ? `more than ${pct}% of people` : "";
     for (const i of axisExamples(t, 4)) d.querySelector(".strip").append(img(i));
     box.append(d);
   }
@@ -500,6 +552,9 @@ async function makeCard() {
   g.fillText("MY TASTE", 80, y + 40);
   g.fillStyle = "#ededeb"; g.font = `700 54px ${font}`;
   y = wrap(g, `${S.traits[0].name} × ${S.traits[1].name}`, 80, y + 108, W - 160, 64);
+  g.fillStyle = "#9a9a96"; g.font = `500 36px ${font}`;
+  const u = uniqLine(S.uniq);
+  y = wrap(g, u[0].toUpperCase() + u.slice(1), 80, y + 4, W - 160, 46);
   // three artworks the model picked for me
   const picks = topBy((i) => S.sUser[i], 3, (i) => !S.used.has(i));
   const ims = await Promise.all(picks.map(loadForCanvas));
@@ -525,7 +580,8 @@ async function share() {
   const blob = await makeCard();
   btn.disabled = false; btn.textContent = "Share my result";
   const file = new File([blob], "my-taste.png", { type: "image/png" });
-  const text = `An AI learned my taste in art from ${CFG.nTrain} picks and guessed ${S.hits}/${CFG.nTest} of my next ones. Can it read you?`;
+  const text = `An AI learned my taste in art from ${CFG.nTrain} picks and guessed ${S.hits}/${CFG.nTest} of my next ones. ` +
+    `My taste: ${S.traits[0].name} × ${S.traits[1].name}, ${uniqLine(S.uniq)}. Can it read you?`;
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], text: `${text} ${link}` }); return; } catch (e) { if (e.name === "AbortError") return; }
   }
@@ -541,13 +597,14 @@ function buildRec(partial) {
   const done = S.tests.filter((t) => t.choice !== undefined);
   return {
     v: 2, id: S.id, partial, at: new Date().toISOString(), model: M.source, fromChallenge: !!S.challenge,
-    tag: CFG.tag, nTrain: CFG.nTrain, nTest: CFG.nTest, nRandom: CFG.nRandom, mixRandom: CFG.mixRandom,
+    tag: CFG.tag, nTrain: CFG.nTrain, nTest: CFG.nTest, nSure: CFG.nSure, nContra: CFG.nContra, nRandom: CFG.nRandom, mixRandom: CFG.mixRandom,
     // q = question index; rnd = whether it was a random (not infogain) pair; paths join to data/lapis/images/
     train: S.answers.map((a, q) => ({ top: M.image_id[a.top], bottom: M.image_id[a.bottom], topPath: M.path[a.top],
                                        bottomPath: M.path[a.bottom], y: a.y, ms: a.ms, rnd: isRandomQ(q) })),
     test: done.map((t) => ({ top: M.image_id[t.top], bottom: M.image_id[t.bottom], topPath: M.path[t.top],
                                  bottomPath: M.path[t.bottom], choice: t.choice, pred: t.pred,
-                                 conf: +t.conf.toFixed(3), cons: t.cons, ms: t.ms })),
+                                 conf: +t.conf.toFixed(3), cons: t.cons, ms: t.ms, kind: t.kind,
+                                 sure: t.kind === "sure" })),
     z: S.z ? S.z.map((v) => +v.toFixed(5)) : null, sideBias: S.z ? +S.b.toFixed(4) : null, hits: S.hits ?? null,
     topRate: +((S.answers.filter((a) => a.y === 1).length + done.filter((t) => t.choice === 0).length) /
                Math.max(1, S.answers.length + done.length)).toFixed(3),
@@ -579,10 +636,12 @@ function newSession() {
         challenge: readChallenge() };
 }
 async function boot() {
-  const [meta, buf] = await Promise.all([
+  const [meta, buf, ref] = await Promise.all([
     fetch("data/meta.json").then((r) => r.json()),
     fetch("data/U.bin").then((r) => r.arrayBuffer()),
+    fetch("data/ref.json").then((r) => r.json()),
   ]);
+  REF = ref;
   M = meta; U = new Float32Array(buf); K = M.k; N = M.n;
   Object.assign(PRIOR, priorBlocks());
   document.querySelectorAll(".n-train").forEach((e) => { e.textContent = CFG.nTrain; });
