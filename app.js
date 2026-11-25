@@ -398,7 +398,7 @@ function tasteMatch(z1, z2) { // correlation of the personal part of the scores 
 function pctBelow(sorted, x) {
   let lo = 0, hi = sorted.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < x) lo = m + 1; else hi = m; }
-  return Math.round((100 * lo) / sorted.length);
+  return Math.min(99, Math.max(1, Math.round((100 * lo) / sorted.length))); // 1..99: the reference crowd is a sample
 }
 /** How much more of trait t this person has than other people (percent), in the trait's own direction. */
 const traitPct = (t) => (t.dev > 0 ? pctBelow(REF.axes[t.k], t.dev) : 100 - pctBelow(REF.axes[t.k], t.dev));
@@ -419,7 +419,6 @@ function showResults() {
   track("Finished", { score: hits, crowd, challenge: !!S.challenge });
   $("r-score").textContent = hits;
   $("r-sub").textContent = `It learned your taste from ${CFG.nTrain} picks, then guessed ${hits} of your next ${CFG.nTest} before you chose.`;
-  $("r-crowd").textContent = `A model of average taste would have guessed ${crowd}/${CFG.nTest}.`;
   const T = traits(S.z);
   S.traits = T;
   $("r-label").textContent = `${T[0].name} × ${T[1].name}`;
